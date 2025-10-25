@@ -2,13 +2,9 @@ from typing import List, Optional, Dict, Any
 
 import pandas as pd
 import requests
-from requests.exceptions import RequestException, JSONDecodeError
+from requests.exceptions import RequestException
 
 class AlphaVantageFetcher:
-    """
-    Clase dedicada a interactuar con la API de Alpha Vantage
-    para obtener noticias y sentimiento del mercado.
-    """
     BASE_URL: str = "https://www.alphavantage.co/query"
 
     def __init__(self, api_key: str):
@@ -39,7 +35,7 @@ class AlphaVantageFetcher:
         if time_to:
             params["time_to"] = time_to
         
-        empty_df = pd.DataFrame(columns=['fecha', 'texto_noticia'])
+        empty_df = pd.DataFrame(columns=['fecha', 'texto_noticia', 'source', 'url'])
 
         try:
             response = requests.get(self.BASE_URL, params=params)
@@ -47,10 +43,6 @@ class AlphaVantageFetcher:
             data = response.json()
 
             if "feed" not in data or not data["feed"]:
-                if "Information" in data:
-                    print(f"API Info: {data.get('Information')}")
-                else:
-                    print("La API no devolvió artículos.")
                 return empty_df
 
             feed = data['feed']
@@ -73,20 +65,52 @@ class AlphaVantageFetcher:
                 })
 
             if not news_items:
-                print("No se encontraron artículos válidos.")
                 return empty_df
 
             df = pd.DataFrame(news_items)
             
-            # Convertir y normalizar la fecha
             df['fecha'] = pd.to_datetime(df['time_published'], format='%Y%m%dT%H%M%S')
             df['fecha'] = df['fecha'].dt.normalize()
 
             return df[['fecha', 'texto_noticia', 'source', 'url']]
 
-        except RequestException as e:
-            print(f"Error en la llamada a la API de Alpha Vantage: {e}")
+        except (RequestException, KeyError, TypeError, ValueError):
             return empty_df
-        except (KeyError, TypeError, ValueError, JSONDecodeError) as e:
-            print(f"Error procesando la respuesta JSON de la API: {e}")
+
+    def fetch_stock_prices(self, ticker: str) -> pd.DataFrame:
+        params = {
+            "function": "TIME_SERIES_DAILY",
+            "symbol": ticker,
+            "apikey": self.api_key,
+            "outputsize": "full"
+        }
+        
+        empty_df = pd.DataFrame(columns=['fecha', 'close_price']).set_index('fecha')
+
+        try:
+            response = requests.get(self.BASE_URL, params=params)
+            response.raise_for_status()
+            data = response.json()
+
+            if "Time Series (Daily)" not in data:
+                return empty_df
+
+            time_series = data["Time Series (Daily)"]
+            price_data = []
+            for date_str, values in time_series.items():
+                price_data.append({
+                    "fecha": date_str,
+                    "close_price": float(values["4. close"])
+                })
+            
+            if not price_data:
+                return empty_df
+
+            df = pd.DataFrame(price_data)
+            df['fecha'] = pd.to_datetime(df['fecha'])
+            df = df.set_index('fecha').sort_index()
+            
+            return df
+
+        except (RequestException, KeyError, TypeError, ValueError):
             return empty_df

@@ -5,3 +5,4 @@ torch
 nltk
 python-dotenv
 matplotlib
+seaborn
