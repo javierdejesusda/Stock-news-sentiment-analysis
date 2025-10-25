@@ -1,0 +1,7 @@
+pandas
+requests
+transformers
+torch
+nltk
+python-dotenv
+matplotlib
